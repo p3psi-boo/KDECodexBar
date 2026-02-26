@@ -20,13 +20,13 @@ include(KDECompilerSettings NO_POLICY_SCOPE)
 include(KDECMakeSettings)
 include(ECMInstallIcons)
 
-find_package(KF6 6.0 REQUIRED COMPONENTS
-    CoreAddons
-    StatusNotifierItem
-    Config
-    I18n
-    WindowSystem
-)
+find_package(KF6CoreAddons 6.0 REQUIRED)
+find_package(KF6StatusNotifierItem 6.0 REQUIRED)
+find_package(KF6Config 6.0 REQUIRED)
+find_package(KF6ConfigWidgets 6.0 REQUIRED)
+find_package(KF6I18n 6.0 REQUIRED)
+find_package(KF6KCMUtils 6.0 QUIET)
+find_package(KF6WindowSystem 6.0 REQUIRED)
 
 add_subdirectory(src/core)
 add_subdirectory(src/app)

@@ -6,6 +6,7 @@ target_sources(kdecodexbar PRIVATE
     IconRenderer.cpp
     SettingsDialog.cpp
     MenuWidget.cpp
+    icons.qrc
 )
 
 target_link_libraries(kdecodexbar PRIVATE
@@ -14,8 +15,13 @@ target_link_libraries(kdecodexbar PRIVATE
     KF6::StatusNotifierItem
     KF6::CoreAddons
     KF6::ConfigCore
+    KF6::ConfigWidgets
     KF6::I18n
 )
+
+if(TARGET KF6::KCMUtils)
+    target_link_libraries(kdecodexbar PRIVATE KF6::KCMUtils)
+endif()
 
 target_include_directories(kdecodexbar PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
 

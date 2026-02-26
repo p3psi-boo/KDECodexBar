@@ -10,6 +10,7 @@ enum class ProviderID {
     Claude,
     Gemini,
     Antigravity,
+    Amp,
     Unknown
 };
 

@@ -2,13 +2,31 @@
 #include "IconRenderer.h"
 #include <KLocalizedString>
 #include <QAction>
-#include <QWidgetAction>
 #include <QIcon>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QtGlobal>
 #include "ProviderRegistry.h"
 #include "Provider.h"
-#include <QSettings>
+#include <KConfigGroup>
+#include <KSharedConfig>
+
+namespace {
+
+constexpr auto kConfigFile = "kdecodexbarrc";
+constexpr auto kConfigGroup = "General";
+constexpr auto kRefreshKey = "refresh_interval";
+constexpr int kDefaultRefreshInterval = 60000;
+
+QString formatUsageBar(double percent) {
+    const int width = 14;
+    const int filled = qBound(0, static_cast<int>((percent * width / 100.0) + 0.5), width);
+    const QString full(filled, '#');
+    const QString empty(width - filled, '-');
+    return QString("[%1%2]").arg(full, empty);
+}
+
+}
 
 TrayIcon::TrayIcon(ProviderRegistry *registry, QObject *parent)
     : QObject(parent)
@@ -50,10 +68,8 @@ TrayIcon::TrayIcon(ProviderRegistry *registry, QObject *parent)
     
     // Initial refresh
     QTimer::singleShot(0, this, [this](){
-        // Create settings dialog to load initial settings (or just use QSettings directly here)
-        // Since we want to respect the saved interval, we should read it properly.
-        QSettings s("KDECodexBar", "KDECodexBar");
-        int interval = s.value("refresh_interval", 60000).toInt();
+        KConfigGroup group(KSharedConfig::openConfig(QString::fromLatin1(kConfigFile)), QString::fromLatin1(kConfigGroup));
+        int interval = group.readEntry(kRefreshKey, kDefaultRefreshInterval);
         if (interval > 0) m_timer->start(interval);
         else m_timer->stop();
 
@@ -78,8 +94,7 @@ void TrayIcon::updateIcon() {
     }
     
     if (!iconUpdated) {
-        // Fallback or keep previous? simpler to just placeholder if empty/inactive
-        // m_sni->setIconByPixmap(IconRenderer::renderPlaceholder());
+        m_sni->setIconByPixmap(IconRenderer::renderPlaceholder());
     }
 
     // 2. Tooltip Update
@@ -140,15 +155,19 @@ void TrayIcon::setupMenu() {
              act->setEnabled(false);
         } else {
              for (const auto &limit : snap.limits) {
-                 QString text = QString("     %1: %2%").arg(limit.label).arg(limit.percent(), 0, 'f', 1);
-                 
-                 // Append reset info if available
+                 const double pct = limit.percent();
+                 const QString text = QString("     %1 %2 %3%")
+                     .arg(limit.label.leftJustified(8, ' ', true))
+                     .arg(formatUsageBar(pct))
+                     .arg(QString::number(pct, 'f', 1));
+
+                 QAction *chartLine = m_menu->addAction(text);
+                 chartLine->setEnabled(false);
+
                  if (!limit.resetDescription.isEmpty()) {
-                     text += QString(" (%1)").arg(limit.resetDescription);
+                     QAction *resetLine = m_menu->addAction(QString("       %1").arg(limit.resetDescription));
+                     resetLine->setEnabled(false);
                  }
-                 
-                 QAction *act = m_menu->addAction(text);
-                 act->setEnabled(false);
              }
         }
 

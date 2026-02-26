@@ -1,51 +1,98 @@
 #include "SettingsDialog.h"
+#include <KLocalizedString>
+#include <KSharedConfig>
+#include <KConfigGroup>
+#include <KCoreConfigSkeleton>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QComboBox>
 #include <QCheckBox>
-#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLayout>
+#include <QStyle>
 #include <QDir>
+#include <QDialogButtonBox>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QFileInfo>
 #include <QCoreApplication>
 
+namespace {
+
+constexpr auto kConfigFile = "kdecodexbarrc";
+constexpr auto kConfigGroup = "General";
+constexpr auto kRefreshKey = "refresh_interval";
+constexpr auto kAutostartKey = "autostart";
+constexpr int kDefaultRefreshInterval = 60000;
+constexpr bool kDefaultAutostart = false;
+
+KConfigGroup settingsGroup() {
+    return KConfigGroup(KSharedConfig::openConfig(QString::fromLatin1(kConfigFile)), QString::fromLatin1(kConfigGroup));
+}
+
+class SettingsSkeleton final : public KCoreConfigSkeleton {
+public:
+    SettingsSkeleton()
+        : KCoreConfigSkeleton(KSharedConfig::openConfig(QString::fromLatin1(kConfigFile))) {
+        setCurrentGroup(QString::fromLatin1(kConfigGroup));
+        addItemInt(QStringLiteral("RefreshInterval"), m_refreshInterval, kDefaultRefreshInterval, QString::fromLatin1(kRefreshKey));
+        addItemBool(QStringLiteral("Autostart"), m_autostart, kDefaultAutostart, QString::fromLatin1(kAutostartKey));
+        load();
+    }
+
+private:
+    qint32 m_refreshInterval = kDefaultRefreshInterval;
+    bool m_autostart = kDefaultAutostart;
+};
+
+}
+
 SettingsDialog::SettingsDialog(QWidget *parent)
-    : QDialog(parent)
-    , m_settings("KDECodexBar", "KDECodexBar")
+    : KConfigDialog(parent, QStringLiteral("kdecodexbar-settings"), new SettingsSkeleton())
 {
-    setWindowTitle(tr("KDECodexBar Settings"));
-    setFixedSize(300, 200);
+    setWindowTitle(i18n("Settings"));
+    setWindowFlag(Qt::WindowContextHelpButtonHint, false);
+    setFaceType(KPageDialog::Plain);
+    setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel | QDialogButtonBox::RestoreDefaults);
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
+    QWidget *page = new QWidget(this);
+    QVBoxLayout *layout = new QVBoxLayout(page);
 
-    // Refresh Interval
-    QLabel *intervalLabel = new QLabel(tr("Refresh Interval:"), this);
-    layout->addWidget(intervalLabel);
+    const int margin = style()->pixelMetric(QStyle::PM_LayoutLeftMargin, nullptr, page);
+    const int verticalSpacing = style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing, nullptr, page);
+    const int horizontalSpacing = style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, page);
+    layout->setContentsMargins(margin, margin, margin, margin);
+    layout->setSpacing(verticalSpacing > 0 ? verticalSpacing : 8);
 
-    m_intervalCombo = new QComboBox(this);
-    m_intervalCombo->addItem(tr("Manual"), -1);
-    m_intervalCombo->addItem(tr("1 Minute"), 60000);
-    m_intervalCombo->addItem(tr("3 Minutes"), 180000);
-    m_intervalCombo->addItem(tr("5 Minutes"), 300000);
-    m_intervalCombo->addItem(tr("15 Minutes"), 900000);
-    layout->addWidget(m_intervalCombo);
+    QFormLayout *formLayout = new QFormLayout();
+    formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    formLayout->setHorizontalSpacing(horizontalSpacing > 0 ? horizontalSpacing : 12);
+    formLayout->setVerticalSpacing(verticalSpacing > 0 ? verticalSpacing : 8);
 
-    layout->addSpacing(10);
+    m_intervalCombo = new QComboBox(page);
+    m_intervalCombo->addItem(i18n("Manual"), -1);
+    m_intervalCombo->addItem(i18n("1 minute"), 60000);
+    m_intervalCombo->addItem(i18n("3 minutes"), 180000);
+    m_intervalCombo->addItem(i18n("5 minutes"), 300000);
+    m_intervalCombo->addItem(i18n("15 minutes"), 900000);
+    formLayout->addRow(i18n("Refresh interval:"), m_intervalCombo);
+    layout->addLayout(formLayout);
 
-    // Autostart
-    m_autostartCheck = new QCheckBox(tr("Run at Startup"), this);
+    m_autostartCheck = new QCheckBox(i18n("Run at startup"), page);
     layout->addWidget(m_autostartCheck);
 
     layout->addStretch();
 
-    // Buttons
-    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::saveSettings);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    layout->addWidget(m_buttonBox);
+    addPage(page, i18n("General"), QStringLiteral("settings-configure"), QString(), false);
 
-    loadSettings();
+    connect(m_intervalCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        updateButtons();
+    });
+    connect(m_autostartCheck, &QCheckBox::toggled, this, [this](bool) {
+        updateButtons();
+    });
+
+    updateWidgets();
 }
 
 int SettingsDialog::refreshInterval() const {
@@ -56,31 +103,62 @@ bool SettingsDialog::isAutostartEnabled() const {
     return m_autostartCheck->isChecked();
 }
 
-void SettingsDialog::loadSettings() {
-    int interval = m_settings.value("refresh_interval", 60000).toInt(); // Default 1 min
+void SettingsDialog::updateWidgets() {
+    const int interval = readRefreshInterval();
     int index = m_intervalCombo->findData(interval);
     if (index != -1) {
         m_intervalCombo->setCurrentIndex(index);
     } else {
-        m_intervalCombo->setCurrentIndex(1); // Default to 1 min if unknown
+        m_intervalCombo->setCurrentIndex(1);
     }
 
-    bool autostart = m_settings.value("autostart", false).toBool();
-    m_autostartCheck->setChecked(autostart);
+    m_autostartCheck->setChecked(readAutostartEnabled());
+    updateButtons();
 }
 
-void SettingsDialog::saveSettings() {
-    m_settings.setValue("refresh_interval", refreshInterval());
-    m_settings.setValue("autostart", isAutostartEnabled());
-    
+void SettingsDialog::updateWidgetsDefault() {
+    int index = m_intervalCombo->findData(kDefaultRefreshInterval);
+    if (index == -1) {
+        index = 1;
+    }
+    m_intervalCombo->setCurrentIndex(index);
+    m_autostartCheck->setChecked(kDefaultAutostart);
+    updateButtons();
+}
+
+void SettingsDialog::updateSettings() {
+    KConfigGroup group = settingsGroup();
+    group.writeEntry(kRefreshKey, refreshInterval());
+    group.writeEntry(kAutostartKey, isAutostartEnabled());
+    group.sync();
+
     updateAutostart(isAutostartEnabled());
-    
+
     emit settingsChanged();
-    accept();
+    updateButtons();
+}
+
+bool SettingsDialog::hasChanged() {
+    return refreshInterval() != readRefreshInterval()
+        || isAutostartEnabled() != readAutostartEnabled();
+}
+
+bool SettingsDialog::isDefault() {
+    return refreshInterval() == kDefaultRefreshInterval
+        && isAutostartEnabled() == kDefaultAutostart;
+}
+
+int SettingsDialog::readRefreshInterval() const {
+    KConfigGroup group = settingsGroup();
+    return group.readEntry(kRefreshKey, kDefaultRefreshInterval);
+}
+
+bool SettingsDialog::readAutostartEnabled() const {
+    KConfigGroup group = settingsGroup();
+    return group.readEntry(kAutostartKey, kDefaultAutostart);
 }
 
 void SettingsDialog::updateAutostart(bool enable) {
-    // Linux XDG Autostart
     QString configDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
     QString autostartDir = configDir + "/autostart";
     QDir dir(autostartDir);
@@ -96,7 +174,7 @@ void SettingsDialog::updateAutostart(bool enable) {
             out << "Type=Application\n";
             out << "Name=KDECodexBar\n";
             out << "Exec=" << QCoreApplication::applicationFilePath() << "\n";
-            out << "Icon=kdecodexbar\n"; // Assume icon exists or let it fallback
+            out << "Icon=kdecodexbar\n";
             out << "Comment=AI Usage Tracker\n";
             out << "X-GNOME-Autostart-enabled=true\n";
             out << "Terminal=false\n";

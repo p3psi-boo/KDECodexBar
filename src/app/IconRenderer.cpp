@@ -81,7 +81,12 @@ QIcon IconRenderer::renderIcon(const UsageSnapshot &snapshot, bool isDarkTheme) 
 }
 
 QIcon IconRenderer::renderPlaceholder() {
-    UsageSnapshot snap; // Empty snapshot
+    QIcon icon(QStringLiteral(":/icons/trayicon.svg"));
+    if (!icon.isNull()) {
+        return icon;
+    }
+
+    UsageSnapshot snap;
     return renderIcon(snap, false);
 }
 

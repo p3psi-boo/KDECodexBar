@@ -16,3 +16,8 @@ Makefile
 *.dll
 *.dylib
 *.exe
+
+# Nix
+result
+.direnv
+.ace-tool/

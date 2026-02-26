@@ -15,6 +15,8 @@ QString Provider::name() const {
     return "Gemini";
   case ProviderID::Antigravity:
     return "Antigravity";
+  case ProviderID::Amp:
+    return "Amp";
   default:
     return "Unknown";
   }

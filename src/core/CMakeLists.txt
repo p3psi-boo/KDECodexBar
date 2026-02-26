@@ -7,6 +7,7 @@ target_sources(kdecodexbar-core PRIVATE
     ClaudeProvider.cpp
     GeminiProvider.cpp
     AntigravityProvider.cpp
+    AmpProvider.cpp
     PtySession.cpp
 )
 

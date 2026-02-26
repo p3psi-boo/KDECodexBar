@@ -1,6 +1,7 @@
 #include <KAboutData>
 #include <KLocalizedString>
 #include <QApplication>
+#include <QStandardPaths>
 
 #include "ProviderRegistry.h"
 #include "TrayIcon.h"
@@ -15,8 +16,12 @@ int main(int argc, char *argv[]) {
                        "https://github.com/steipete/CodexBar");
   KAboutData::setApplicationData(aboutData);
 
-  // Needed for proper icon association and portal registration
-  app.setDesktopFileName("kdecodexbar");
+  const QString desktopFileName = QStringLiteral("kdecodexbar");
+  if (!QStandardPaths::locate(QStandardPaths::ApplicationsLocation,
+                              desktopFileName + QStringLiteral(".desktop"))
+           .isEmpty()) {
+    app.setDesktopFileName(desktopFileName);
+  }
   app.setQuitOnLastWindowClosed(false);
 
   auto *registry = new ProviderRegistry(&app);

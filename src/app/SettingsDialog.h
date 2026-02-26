@@ -1,13 +1,11 @@
 #pragma once
 
-#include <QDialog>
-#include <QSettings>
+#include <KConfigDialog>
 
 class QComboBox;
 class QCheckBox;
-class QDialogButtonBox;
 
-class SettingsDialog : public QDialog {
+class SettingsDialog : public KConfigDialog {
     Q_OBJECT
 public:
     explicit SettingsDialog(QWidget *parent = nullptr);
@@ -20,13 +18,21 @@ signals:
     void settingsChanged();
 
 private slots:
-    void saveSettings();
-    void loadSettings();
     void updateAutostart(bool enable);
 
+protected slots:
+    void updateSettings() override;
+    void updateWidgets() override;
+    void updateWidgetsDefault() override;
+
+protected:
+    bool hasChanged() override;
+    bool isDefault() override;
+
 private:
+    int readRefreshInterval() const;
+    bool readAutostartEnabled() const;
+
     QComboBox *m_intervalCombo;
     QCheckBox *m_autostartCheck;
-    QDialogButtonBox *m_buttonBox;
-    QSettings m_settings;
 };
