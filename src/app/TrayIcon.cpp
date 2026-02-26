@@ -1,5 +1,6 @@
 #include "TrayIcon.h"
 #include "IconRenderer.h"
+#include "AppConfigKeys.h"
 #include <KLocalizedString>
 #include <QAction>
 #include <QIcon>
@@ -19,10 +20,54 @@
 
 namespace {
 
-constexpr auto kConfigFile = "kdecodexbarrc";
-constexpr auto kConfigGroup = "General";
-constexpr auto kRefreshKey = "refresh_interval";
-constexpr int kDefaultRefreshInterval = 60000;
+KSharedConfig::Ptr sharedConfig() {
+    auto cfg = KSharedConfig::openConfig(QString::fromLatin1(AppConfigKeys::kConfigFile));
+    // KSharedConfig is cached per-thread; force reload so Settings Apply takes effect immediately.
+    cfg->reparseConfiguration();
+    return cfg;
+}
+
+KConfigGroup generalGroup() {
+    return KConfigGroup(sharedConfig(), QString::fromLatin1(AppConfigKeys::kGeneralGroup));
+}
+
+KConfigGroup platformsGroup() {
+    return KConfigGroup(sharedConfig(), QString::fromLatin1(AppConfigKeys::kPlatformsGroup));
+}
+
+bool isProviderEnabled(ProviderID id) {
+    KConfigGroup group = platformsGroup();
+    switch (id) {
+    case ProviderID::Codex:
+        return group.readEntry(QString::fromLatin1(AppConfigKeys::kEnableCodexKey), AppConfigKeys::kDefaultPlatformEnabled);
+    case ProviderID::Claude:
+        return group.readEntry(QString::fromLatin1(AppConfigKeys::kEnableClaudeKey), AppConfigKeys::kDefaultPlatformEnabled);
+    case ProviderID::Gemini:
+        return group.readEntry(QString::fromLatin1(AppConfigKeys::kEnableGeminiKey), AppConfigKeys::kDefaultPlatformEnabled);
+    case ProviderID::Antigravity:
+        return group.readEntry(QString::fromLatin1(AppConfigKeys::kEnableAntigravityKey), AppConfigKeys::kDefaultPlatformEnabled);
+    case ProviderID::Amp:
+        return group.readEntry(QString::fromLatin1(AppConfigKeys::kEnableAmpKey), AppConfigKeys::kDefaultPlatformEnabled);
+    default:
+        return false;
+    }
+}
+
+ProviderID firstEnabledProviderID(ProviderRegistry *registry) {
+    for (auto *provider : registry->providers()) {
+        if (isProviderEnabled(provider->id())) {
+            return provider->id();
+        }
+    }
+    return ProviderID::Unknown;
+}
+
+ProviderID normalizeSelectedProvider(ProviderRegistry *registry, ProviderID current) {
+    if (current != ProviderID::Unknown && registry->provider(current) && isProviderEnabled(current)) {
+        return current;
+    }
+    return firstEnabledProviderID(registry);
+}
 
 QString formatUsageBar(double percent) {
     const int width = 14;
@@ -83,25 +128,33 @@ TrayIcon::TrayIcon(ProviderRegistry *registry, QObject *parent)
     // Setup refresh timer (every 60s)
     connect(m_timer, &QTimer::timeout, this, [this](){
         for (auto *provider : m_registry->providers()) {
-            provider->refresh();
+            if (isProviderEnabled(provider->id())) {
+                provider->refresh();
+            }
         }
     });
     m_timer->start(60000); 
     
     // Initial refresh
     QTimer::singleShot(0, this, [this](){
-        KConfigGroup group(KSharedConfig::openConfig(QString::fromLatin1(kConfigFile)), QString::fromLatin1(kConfigGroup));
-        int interval = group.readEntry(kRefreshKey, kDefaultRefreshInterval);
+        m_selectedProviderID = normalizeSelectedProvider(m_registry, m_selectedProviderID);
+
+        KConfigGroup group = generalGroup();
+        int interval = group.readEntry(QString::fromLatin1(AppConfigKeys::kRefreshIntervalKey), AppConfigKeys::kDefaultRefreshIntervalMs);
         if (interval > 0) m_timer->start(interval);
         else m_timer->stop();
 
         for (auto *provider : m_registry->providers()) {
-            provider->refresh();
+            if (isProviderEnabled(provider->id())) {
+                provider->refresh();
+            }
         }
     });
 }
 
 void TrayIcon::updateIcon() {
+    m_selectedProviderID = normalizeSelectedProvider(m_registry, m_selectedProviderID);
+
     // 1. Icon Update
     // Only render icon for the selected provider
     auto *provider = m_registry->provider(m_selectedProviderID);
@@ -151,7 +204,16 @@ void TrayIcon::setupMenu() {
     title->setEnabled(false);
     m_menu->addSeparator();
 
+    const ProviderID normalizedSelection = normalizeSelectedProvider(m_registry, m_selectedProviderID);
+    m_selectedProviderID = normalizedSelection;
+
+    bool anyPlatformEnabled = false;
     for (const auto &provider : m_registry->providers()) {
+        if (!isProviderEnabled(provider->id())) {
+            continue;
+        }
+        anyPlatformEnabled = true;
+
         // Section Header (Selectable)
         bool isSelected = (provider->id() == m_selectedProviderID);
         // Use text-based indicator to control spacing
@@ -195,6 +257,12 @@ void TrayIcon::setupMenu() {
 
         m_menu->addSeparator();
     }
+
+    if (!anyPlatformEnabled) {
+        QAction *act = m_menu->addAction(i18n("No platforms enabled"));
+        act->setEnabled(false);
+        m_menu->addSeparator();
+    }
     
     // Settings & Refresh
     auto *settings = m_menu->addAction(i18n("Settings"));
@@ -212,7 +280,9 @@ void TrayIcon::setupMenu() {
     
     m_menu->addAction(i18n("Refresh All"), this, [this](){
         for (auto *provider : m_registry->providers()) {
-            provider->refresh();
+            if (isProviderEnabled(provider->id())) {
+                provider->refresh();
+            }
         }
     });
     
@@ -231,5 +301,14 @@ void TrayIcon::applySettings() {
         m_timer->start(interval);
     } else {
         m_timer->stop();
+    }
+
+    // If selection got disabled, or platforms changed, update UI and refresh enabled ones.
+    m_selectedProviderID = normalizeSelectedProvider(m_registry, m_selectedProviderID);
+    updateIcon();
+    for (auto *provider : m_registry->providers()) {
+        if (isProviderEnabled(provider->id())) {
+            provider->refresh();
+        }
     }
 }
