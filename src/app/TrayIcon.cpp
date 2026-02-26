@@ -5,11 +5,17 @@
 #include <QIcon>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
+#include <QGuiApplication>
 #include <QtGlobal>
 #include "ProviderRegistry.h"
 #include "Provider.h"
 #include <KConfigGroup>
 #include <KSharedConfig>
+
+#if __has_include(<kstatusnotifieritem_version.h>)
+#include <kstatusnotifieritem_version.h>
+#endif
 
 namespace {
 
@@ -52,6 +58,22 @@ TrayIcon::TrayIcon(ProviderRegistry *registry, QObject *parent)
 
     setupMenu();
     m_sni->setContextMenu(m_menu);
+
+    // Prefer host-managed menu on single-click (fixes Wayland popup grabbing).
+    // If KF is too old for setIsMenu(), keep a best-effort X11-only fallback.
+#if defined(KSTATUSNOTIFIERITEM_VERSION) && (KSTATUSNOTIFIERITEM_VERSION >= QT_VERSION_CHECK(6, 14, 0))
+    m_sni->setIsMenu(true);
+#else
+    if (QGuiApplication::platformName() == QStringLiteral("xcb")) {
+        connect(m_sni, &KStatusNotifierItem::activateRequested, this,
+                [this](bool active, const QPoint &pos) {
+                    if (!active) return;
+                    setupMenu();
+                    const QPoint globalPos = pos.isNull() ? QCursor::pos() : pos;
+                    m_menu->popup(globalPos);
+                });
+    }
+#endif
     
     // Connect providers
     for (auto *provider : m_registry->providers()) {

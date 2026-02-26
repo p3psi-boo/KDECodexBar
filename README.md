@@ -73,7 +73,7 @@ sudo make install
 This will install the binary and the `.desktop` file, allowing you to launch it from your application launcher (search for "KDECodexBar").
 
 ### Configuration
-1.  Right-click the tray icon.
+1.  Left-click (or right-click) the tray icon.
 2.  Select **Settings**.
 3.  Adjust the **Refresh Interval** or toggle **Run at Startup**.
 4.  Data is automatically refreshed based on the interval. You can also manually trigger a **Refresh All** from the context menu.
